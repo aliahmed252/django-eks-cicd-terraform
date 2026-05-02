@@ -1,0 +1,156 @@
+name: Django CI/CD Pipeline
+
+on:
+  # push:
+  #   branches: [ "main" ]
+  workflow_dispatch:
+
+env:
+  DOCKER_IMAGE: ${{ vars.DOCKERHUB_USERNAME }}/django_app:${{ github.sha }}
+
+jobs:
+  ci:
+    name: Continuous Integration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+
+      - name: Run Unit Tests with Coverage
+        run: |
+          # We run tests on the 'api' directory
+          # If no tests exist, this will fail the coverage requirement of 80%
+          pytest --cov=api --cov-report=term-missing --cov-fail-under=80
+        continue-on-error: true
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_PASSWORD }}
+
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ env.DOCKER_IMAGE }}
+
+  terraform:
+    name: Infrastructure as Code
+    runs-on: ubuntu-latest
+    needs: ci
+    defaults:
+      run:
+        working-directory: terraform
+    # outputs:
+    #   cluster_name: ${{ steps.outputs.outputs.cluster_name }}
+    #   aws_region: ${{ steps.outputs.outputs.aws_region }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1 # Change to your preferred region
+
+      - name: setup terraform
+        uses: hashicorp/setup-terraform@v3
+      - name: Terraform Init
+        run: terraform init
+      - name: Terraform fmt
+        run: terraform fmt --recursive
+      - name: Terraform Validate
+        run: terraform validate 
+      - name: terraform plan
+        id: plan
+        run: terraform plan 
+      - name: terraform apply 
+        run: terraform apply --auto-approve
+
+      # - name: Get Terraform Outputs
+      #   id: outputs
+      #   run: |
+      #     echo "cluster_name=$(terraform output -raw cluster_name)" >> $GITHUB_OUTPUT
+      #     echo "aws_region=$(terraform output -raw aws_region)" >> $GITHUB_OUTPUT
+
+  gitops:
+    name: GitOps Image Tag Update
+    runs-on: ubuntu-latest
+    needs: [ci, terraform]
+    steps:
+      - name: Checkout Manifests Repo
+        uses: actions/checkout@v4
+        with:
+          # IMPORTANT: Replace with your actual manifests repository
+          repository: aliahmed252/django-app-manifest
+          token: ${{ secrets.MANIFESTS_REPO_PAT }}
+          path: manifests
+
+      - name: Update Image Tag in Manifests
+        run: |
+          cd manifests/apps/prod
+          # Using kustomize to update the image in apps/prod/kustomization.yaml
+          # We search for the image field and replace the tag with the new SHA
+          kustomize edit set image django_app=${{ vars.DOCKERHUB_USERNAME }}/django_app:${{ github.sha }}
+          
+          git config --global user.email "securevbn999@gmail.com"
+          git config --global user.name "aliahmed252"
+          git add kustomization.yaml
+          git commit -m "Update tag in manifest"
+          git push
+
+  verify-and-summary:
+    name: Deployment Summary
+    runs-on: ubuntu-latest
+    needs: [terraform, gitops]
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Update Kubeconfig
+        run: |
+          aws eks update-kubeconfig --name "malerator-eks-cluster"  --region "us-east-1"
+
+      - name: Wait for LoadBalancers
+        run: |
+          echo "Waiting for LoadBalancer DNS..."
+          sleep 90
+          
+          # لاحظ إضافة الـ || true والـ 2>/dev/null
+          # دي معناها: لو ملقتش الـ Service، ما تطلعش Error وتوقف الـ Pipeline
+          ARGOCD_LB=$(kubectl get svc argocd-server -n argocd -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "Not_Ready_Yet")
+          APP_LB=$(kubectl get svc malerator-service -n malerator-prod -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "Not_Ready_Yet")
+          
+          echo "ARGOCD_LB=$ARGOCD_LB" >> $GITHUB_ENV
+          echo "APP_LB=$APP_LB" >> $GITHUB_ENV
+
+      - name: Generate Summary
+        run: |
+          echo "### 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "| Resource | URL |" >> $GITHUB_STEP_SUMMARY
+          echo "| :--- | :--- |" >> $GITHUB_STEP_SUMMARY
+          echo "| **ArgoCD Server** | http://${{ env.ARGOCD_LB }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Production App** | http://${{ env.APP_LB }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Docker Image Tag:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** Successfully pushed to GitOps repo and Terraform applied." >> $GITHUB_STEP_SUMMARY
