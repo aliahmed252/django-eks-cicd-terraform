@@ -136,13 +136,14 @@ jobs:
           echo "Waiting for LoadBalancer DNS..."
           sleep 90
           
-          # لاحظ إضافة الـ || true والـ 2>/dev/null
-          # دي معناها: لو ملقتش الـ Service، ما تطلعش Error وتوقف الـ Pipeline
           ARGOCD_LB=$(kubectl get svc argocd-server -n argocd -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "Not_Ready_Yet")
           APP_LB=$(kubectl get svc malerator-service -n malerator-prod -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "Not_Ready_Yet")
+          # السطر الجديد لجرافانا
+          GRAFANA_LB=$(kubectl get svc prometheus-stack-grafana -n monitoring -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "Not_Ready_Yet")
           
           echo "ARGOCD_LB=$ARGOCD_LB" >> $GITHUB_ENV
           echo "APP_LB=$APP_LB" >> $GITHUB_ENV
+          echo "GRAFANA_LB=$GRAFANA_LB" >> $GITHUB_ENV # تصدير المتغير
 
       - name: Generate Summary
         run: |
@@ -150,7 +151,7 @@ jobs:
           echo "| Resource | URL |" >> $GITHUB_STEP_SUMMARY
           echo "| :--- | :--- |" >> $GITHUB_STEP_SUMMARY
           echo "| **ArgoCD Server** | http://${{ env.ARGOCD_LB }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Grafana Dashboard** | http://${{ env.GRAFANA_LB }} |" >> $GITHUB_STEP_SUMMARY
           echo "| **Production App** | http://${{ env.APP_LB }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Docker Image Tag:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Status:** Successfully pushed to GitOps repo and Terraform applied." >> $GITHUB_STEP_SUMMARY

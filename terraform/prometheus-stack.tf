@@ -1,11 +1,11 @@
 # جلب بيانات السيكرت بتاع جرافانا
-data "aws_secretsmanager_secret" "grafana_password_meta" {
-  name = "grafana/admin-password"
-}
+#data "aws_secretsmanager_secret" "grafana_password_meta" {
+#  name = "grafana/admin-password"
+#}
 
-data "aws_secretsmanager_secret_version" "grafana_password_value" {
-  secret_id = data.aws_secretsmanager_secret.grafana_password_meta.id
-}
+#data "aws_secretsmanager_secret_version" "grafana_password_value" {
+#  secret_id = data.aws_secretsmanager_secret.grafana_password_meta.id
+#}
 
 resource "helm_release" "prometheus_stack" {
   name             = "prometheus-stack"
@@ -15,10 +15,10 @@ resource "helm_release" "prometheus_stack" {
   create_namespace = true
   timeout          = 600 # بنزود الوقت عشان الـ Charts دي تقيلة
 
-  set {
-      name  = "adminPassword"
-      value = jsondecode(data.aws_secretsmanager_secret_version.grafana_password_value.secret_string)["password"]
-  }
+#  set {
+#      name  = "adminPassword"
+#      value = jsondecode(data.aws_secretsmanager_secret_version.grafana_password_value.secret_string)["password"]
+#  }
 
   set {
     name  = "grafana.service.type"
