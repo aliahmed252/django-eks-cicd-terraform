@@ -16,8 +16,8 @@ resource "helm_release" "prometheus_stack" {
   timeout          = 600 # بنزود الوقت عشان الـ Charts دي تقيلة
 
   set {
-    name  = "adminPassword"
-    value = data.aws_secretsmanager_secret_version.grafana_password_value.secret_string
+      name  = "adminPassword"
+      value = jsondecode(data.aws_secretsmanager_secret_version.grafana_password_value.secret_string)["password"]
   }
 
   set {

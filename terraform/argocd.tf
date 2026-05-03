@@ -20,7 +20,8 @@ resource "helm_release" "argocd" {
 
   set {
     name  = "configs.secret.argocdServerAdminPassword"
-    value = data.aws_secretsmanager_secret_version.argocd_password_value.secret_string
+    # بنستخدم jsondecode عشان نحول النص لـ Map ونختار منها الـ password
+    value = jsondecode(data.aws_secretsmanager_secret_version.argocd_password_value.secret_string)["password"]
   }
 
   set {
