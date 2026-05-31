@@ -33,6 +33,10 @@
        23     *   **Terraform**: The AWS infrastructure, including the EKS cluster, VPC, IAM roles, and necessary networking
           components, is provisioned and managed declaratively using Terraform.
        24
+          ## Screenshots
+          ![Architecture Diagram]
+          (screenshots/arch-dia.jpg)
+       
        25 ## Tech Stack
        26
        27 *   **AWS EKS (Elastic Kubernetes Service)**: Managed Kubernetes service providing a scalable and reliable platform for
