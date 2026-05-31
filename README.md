@@ -34,7 +34,7 @@
           components, is provisioned and managed declaratively using Terraform.
        24
           ## Screenshots
-          ![Architecture Diagram](screenshots/arch-dia.jpg)
+          ![Architecture Diagram](./screenshots/arch-dia.jpg)
        
        25 ## Tech Stack
        26
